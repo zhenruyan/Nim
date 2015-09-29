@@ -590,6 +590,9 @@ proc waitForMultipleObjects*(nCount: DWORD, lpHandles: PWOHandleArray,
                              bWaitAll: WINBOOL, dwMilliseconds: DWORD): DWORD{.
     stdcall, dynlib: "kernel32", importc: "WaitForMultipleObjects".}
 
+proc waitForMultipleEvents*(cEvents: DWORD, lpHandles: PWOHandleArray,
+                            bWaitAll: WINBOOL, dwMilliseconds: DWORD): DWORD{.
+    stdcall, dynlib: "kernel32", importc: "WaitForMultipleObjects".}
 
 # for memfiles.nim:
 

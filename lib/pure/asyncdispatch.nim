@@ -378,6 +378,7 @@ when defined(windows) or defined(nimdoc):
     PDispatcher* = ref object of PDispatcherBase
       ioPort: Handle
       handles: HashSet[AsyncFD]
+      eventHandles: Table[Handle, proc (handle: Handle) {.closure.}]
 
     CustomOverlapped = object of OVERLAPPED
       data*: CompletionData
@@ -397,6 +398,7 @@ when defined(windows) or defined(nimdoc):
     result.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
     result.handles = initSet[AsyncFD]()
     result.timers = @[]
+    result.eventHandles = initTable[Handle, proc (handle: Handle) {.closure.}]()
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
   proc getGlobalDispatcher*(): PDispatcher =
@@ -423,44 +425,84 @@ when defined(windows) or defined(nimdoc):
   proc poll*(timeout = 500) =
     ## Waits for completion events and processes them.
     let p = getGlobalDispatcher()
-    if p.handles.len == 0 and p.timers.len == 0:
+    if p.handles.len == 0 and p.timers.len == 0 and p.eventHandles.len == 0:
       raise newException(ValueError,
-        "No handles or timers registered in dispatcher.")
+        "No handles, timers or event handles registered in dispatcher.")
 
     let llTimeout =
       if timeout ==  -1: winlean.INFINITE
       else: timeout.int32
-    var lpNumberOfBytesTransferred: Dword
-    var lpCompletionKey: ULONG
-    var customOverlapped: PCustomOverlapped
-    let res = getQueuedCompletionStatus(p.ioPort,
-        addr lpNumberOfBytesTransferred, addr lpCompletionKey,
-        cast[ptr POVERLAPPED](addr customOverlapped), llTimeout).bool
 
-    # http://stackoverflow.com/a/12277264/492186
-    # TODO: http://www.serverframework.com/handling-multiple-pending-socket-read-and-write-operations.html
-    if res:
-      # This is useful for ensuring the reliability of the overlapped struct.
-      assert customOverlapped.data.fd == lpCompletionKey.AsyncFD
+    # WaitForMultipleObjects
+    # When an IO Completion Port is signalled, it means that a thread is
+    # not currently blocking on `getQueuedCompletionStatus`, i.e. we should
+    # call it.
+    var eventHandles: seq[Handle] = @[]
+    for evHandle, cb in p.eventHandles:
+      eventHandles.add(evHandle)
+    eventHandles.add(p.ioPort)
 
-      customOverlapped.data.cb(customOverlapped.data.fd,
-          lpNumberOfBytesTransferred, OSErrorCode(-1))
-      GC_unref(customOverlapped)
+    let waitRet = waitForMultipleObjects(eventHandles.len.DWord,
+                      cast[PWOHandleArray](addr eventHandles[0]),
+                                         false.WinBool, llTimeout)
+
+    var ioReady = false
+    echo(waitRet)
+    case waitRet
+    of WAIT_FAILED: raiseOSError()
+    of WAIT_TIMEOUT: return
     else:
-      let errCode = osLastError()
-      if customOverlapped != nil:
+      # TODO: Why couldn't I just do?:
+      # of WAIT_OBJECT_0 .. WAIT_OBJECT_0+eventHandles.len-1:
+      if waitRet >= WAIT_OBJECT_0 or waitRet <= WAIT_OBJECT_0+eventHandles.len-1:
+        let index = waitRet - WAIT_OBJECT_0
+        # ioPort is at index len-1, so it must be ready
+        ioReady = index == eventHandles.len-1
+        # Call the cb of other handles
+        if not ioReady:
+          p.eventHandles[eventHandles[index]](eventHandles[index])
+      else:
+        raiseOSError()
+
+    if ioReady:
+      var lpNumberOfBytesTransferred: Dword
+      var lpCompletionKey: ULONG
+      var customOverlapped: PCustomOverlapped
+      let res = getQueuedCompletionStatus(p.ioPort,
+          addr lpNumberOfBytesTransferred, addr lpCompletionKey,
+          cast[ptr POVERLAPPED](addr customOverlapped), 1).bool
+
+      # http://stackoverflow.com/a/12277264/492186
+      # TODO: http://www.serverframework.com/handling-multiple-pending-socket-read-and-write-operations.html
+      if res:
+        # This is useful for ensuring the reliability of the overlapped struct.
         assert customOverlapped.data.fd == lpCompletionKey.AsyncFD
+
         customOverlapped.data.cb(customOverlapped.data.fd,
-            lpNumberOfBytesTransferred, errCode)
+            lpNumberOfBytesTransferred, OSErrorCode(-1))
         GC_unref(customOverlapped)
       else:
-        if errCode.int32 == WAIT_TIMEOUT:
-          # Timed out
-          discard
-        else: raiseOSError(errCode)
+        let errCode = osLastError()
+        if customOverlapped != nil:
+          assert customOverlapped.data.fd == lpCompletionKey.AsyncFD
+          customOverlapped.data.cb(customOverlapped.data.fd,
+              lpNumberOfBytesTransferred, errCode)
+          GC_unref(customOverlapped)
+        else:
+          if errCode.int32 == WAIT_TIMEOUT:
+            # Timed out
+            discard
+          else: raiseOSError(errCode)
 
     # Timer processing.
     processTimers(p)
+
+  proc addEventHandle*(handle: Handle, cb: proc (handle: Handle) {.closure.}) =
+    ## This is a low-level procedure.
+    ##
+    ## **Warning**: It is only supported on Windows.
+    let p = getGlobalDispatcher()
+    p.eventHandles[handle] = cb
 
   var connectExPtr: pointer = nil
   var acceptExPtr: pointer = nil
