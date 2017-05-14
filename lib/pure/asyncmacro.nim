@@ -28,12 +28,12 @@ template createCb(retFutureSym, iteratorNameSym,
                   name, futureVarCompletions: untyped) =
   var nameIterVar = iteratorNameSym
   #{.push stackTrace: off.}
-  proc cb {.closure,gcsafe.} =
+  proc cb(fut: FutureBase) {.closure,gcsafe.} =
     try:
       if not nameIterVar.finished:
         var next = nameIterVar()
         if next == nil:
-          if not retFutureSym.finished:
+          if not fut.finished:
             let msg = "Async procedure ($1) yielded `nil`, are you await'ing a " &
                     "`nil` Future?"
             raise newException(AssertionError, msg % name)
@@ -42,14 +42,14 @@ template createCb(retFutureSym, iteratorNameSym,
     except:
       futureVarCompletions
 
-      if retFutureSym.finished:
+      if fut.finished:
         # Take a look at tasyncexceptions for the bug which this fixes.
         # That test explains it better than I can here.
         raise
       else:
-        retFutureSym.fail(getCurrentException())
+        fut.fail(getCurrentException())
 
-  cb()
+  cb(retFutureSym)
   #{.pop.}
 proc generateExceptionCheck(futSym,
     tryStmt, rootReceiver, fromNode: NimNode): NimNode {.compileTime.} =

@@ -2,7 +2,7 @@
 # TODO: This shouldn't need to be included, but should ideally be exported.
 type
   FutureBase* = ref object of RootObj ## Untyped future.
-    cb: proc () {.closure,gcsafe.}
+    cb: proc (fut: FutureBase) {.closure,gcsafe.}
     finished: bool
     error*: ref Exception ## Stored exception
     errorStackTrace*: string
@@ -30,7 +30,7 @@ type
 when not defined(release):
   var currentID = 0
 
-proc callSoon*(cbproc: proc ()) {.gcsafe.}
+proc callSoon*(fut: FutureBase) {.gcsafe.}
 
 template setupFutureBase(fromProc: string) =
   new(result)
@@ -106,7 +106,7 @@ proc complete*[T](future: Future[T], val: T) =
   future.value = val
   future.finished = true
   if future.cb != nil:
-    future.cb()
+    future.cb(future)
 
 proc complete*(future: Future[void]) =
   ## Completes a void ``future``.
@@ -115,7 +115,7 @@ proc complete*(future: Future[void]) =
   assert(future.error == nil)
   future.finished = true
   if future.cb != nil:
-    future.cb()
+    future.cb(future)
 
 proc complete*[T](future: FutureVar[T]) =
   ## Completes a ``FutureVar``.
@@ -124,7 +124,7 @@ proc complete*[T](future: FutureVar[T]) =
   assert(fut.error == nil)
   fut.finished = true
   if fut.cb != nil:
-    fut.cb()
+    fut.cb(fut)
 
 proc complete*[T](future: FutureVar[T], val: T) =
   ## Completes a ``FutureVar`` with value ``val``.
@@ -136,24 +136,24 @@ proc complete*[T](future: FutureVar[T], val: T) =
   fut.finished = true
   fut.value = val
   if not fut.cb.isNil():
-    fut.cb()
+    fut.cb(fut)
 
 proc complete*[T](future: FutureStream[T]) =
   ## Completes a ``FutureStream`` signalling the end of data.
   future.finished = true
   if not future.cb.isNil():
-    future.cb()
+    future.cb(future)
 
-proc fail*[T](future: Future[T], error: ref Exception) =
+proc fail*(future: FutureBase, error: ref Exception) =
   ## Completes ``future`` with ``error``.
   #assert(not future.finished, "Future already finished, cannot finish twice.")
-  checkFinished(future)
+  #checkFinished(future)
   future.finished = true
   future.error = error
   future.errorStackTrace =
     if getStackTrace(error) == "": getStackTrace() else: getStackTrace(error)
   if future.cb != nil:
-    future.cb()
+    future.cb(future)
   else:
     # This is to prevent exceptions from being silently ignored when a future
     # is discarded.
@@ -162,7 +162,7 @@ proc fail*[T](future: Future[T], error: ref Exception) =
     #raise error
     discard
 
-proc `callback=`*(future: FutureBase, cb: proc () {.closure,gcsafe.}) =
+proc `callback=`*(future: FutureBase, cb: proc (fut: FutureBase) {.closure,gcsafe.}) =
   ## Sets the callback proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
@@ -171,14 +171,15 @@ proc `callback=`*(future: FutureBase, cb: proc () {.closure,gcsafe.}) =
   ## passes ``future`` as a param to the callback.
   future.cb = cb
   if future.finished:
-    callSoon(future.cb)
+    callSoon(future)
 
 proc `callback=`*[T](future: Future[T],
     cb: proc (future: Future[T]) {.closure,gcsafe.}) =
   ## Sets the callback proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
-  future.callback = proc () = cb(future)
+  future.callback = proc (fut: FutureBase) {.closure, gcsafe.} =
+    cb(Future[T](fut))
 
 proc `callback=`*[T](future: FutureStream[T],
     cb: proc (future: FutureStream[T]) {.closure,gcsafe.}) =
@@ -190,11 +191,12 @@ proc `callback=`*[T](future: FutureStream[T],
   ##
   ## If the future stream already has data or is finished then ``cb`` will be
   ## called immediately.
-  future.cb = proc () = cb(future)
+  future.callback = proc (fut: FutureBase) {.closure, gcsafe.} =
+    cb(FutureStream[T](fut))
   if future.queue.len > 0 or future.finished:
-    callSoon(future.cb)
+    callSoon(future)
 
-proc injectStacktrace[T](future: Future[T]) =
+proc injectStacktrace(future: FutureBase) =
   # TODO: Come up with something better.
   when not defined(release):
     var msg = ""
@@ -303,7 +305,7 @@ proc read*[T](future: FutureStream[T]): Future[(bool, T)] =
         resFut.complete(res)
 
       # If the saved callback isn't nil then let's call it.
-      if not savedCb.isNil: savedCb()
+      if not savedCb.isNil: savedCb(future)
   return resFut
 
 proc len*[T](future: FutureStream[T]): int =
@@ -316,7 +318,7 @@ proc asyncCheck*[T](future: Future[T]) =
   ##
   ## This should be used instead of ``discard`` to discard void futures.
   future.callback =
-    proc () =
+    proc (future: FutureBase) =
       if future.failed:
         injectStacktrace(future)
         raise future.error
@@ -326,12 +328,12 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## complete.
   var retFuture = newFuture[void]("asyncdispatch.`and`")
   fut1.callback =
-    proc () =
+    proc (fut1: FutureBase) =
       if not retFuture.finished:
         if fut1.failed: retFuture.fail(fut1.error)
         elif fut2.finished: retFuture.complete()
   fut2.callback =
-    proc () =
+    proc (fut2: FutureBase) =
       if not retFuture.finished:
         if fut2.failed: retFuture.fail(fut2.error)
         elif fut1.finished: retFuture.complete()
