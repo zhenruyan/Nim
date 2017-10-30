@@ -36,3 +36,4 @@
   This means its results are more precise and it can't run into an infinite loop
   anymore.
 - Added ``typetraits.$`` as an alias for ``typetraits.name``.
+- Added ``random.skipRandomNumbers``.

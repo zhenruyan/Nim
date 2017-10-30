@@ -51,7 +51,7 @@ proc next(s: var RandomGenState): uint64 =
   s.a0 = rotl(s0, 55) xor s1 xor (s1 shl 14) # a, b
   s.a1 = rotl(s1, 36) # c
 
-proc skipRandomNumbers(s: var RandomGenState) =
+proc skipRandomNumbers*(s: var RandomGenState) =
   ## This is the jump function for the generator. It is equivalent
   ## to 2^64 calls to next(); it can be used to generate 2^64
   ## non-overlapping subsequences for parallel computations.
