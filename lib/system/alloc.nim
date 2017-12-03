@@ -106,6 +106,7 @@ type
     chunkStarts: IntSet
     root, deleted, last, freeAvlNodes: PAvlNode
     locked, blockChunkSizeIncrease: bool # if locked, we cannot free pages.
+    gcHint: bool # tell the GC it's wise to run
     nextChunkSize: int
     bottomData: AvlNode
     heapLinks: HeapLinks
@@ -312,6 +313,19 @@ when false:
 
 const nimMaxHeap {.intdefine.} = 0
 
+proc nextPowerOfTwo(x: int): int {.noSideEffect.} =
+  result = x - 1
+  when defined(cpu64):
+    result = result or (result shr 32)
+  when sizeof(int) > 2:
+    result = result or (result shr 16)
+  when sizeof(int) > 1:
+    result = result or (result shr 8)
+  result = result or (result shr 4)
+  result = result or (result shr 2)
+  result = result or (result shr 1)
+  inc result
+
 proc requestOsChunks(a: var MemRegion, size: int): PBigChunk =
   when not defined(emscripten):
     if not a.blockChunkSizeIncrease:
@@ -322,8 +336,12 @@ proc requestOsChunks(a: var MemRegion, size: int): PBigChunk =
       if usedMem < 64 * 1024:
         a.nextChunkSize = PageSize*4
       else:
-        a.nextChunkSize = min(roundup(usedMem shr 2, PageSize), a.nextChunkSize * 2)
-  var size = size
+        let u = roundup(usedMem shr 2, PageSize)
+        let m2 = a.nextChunkSize * 2
+        let m = min(u, m2)
+        if m > a.nextChunkSize: a.nextChunkSize = m
+  if size > PageSize: a.gcHint = true
+  var size = nextPowerOfTwo(size)
 
   if size > a.nextChunkSize:
     result = cast[PBigChunk](osAllocPages(size))
