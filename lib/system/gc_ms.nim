@@ -434,20 +434,18 @@ proc sweep(gch: var GcHeap) =
       freeCyclicCell(gch, c)
   else:
     for x in allObjects(gch.region):
-      if isCell(x):
-        # cast to PCell is correct here:
-        var c = cast[PCell](x)
-        if c.refcount == rcBlack: c.refcount = rcWhite
-        else: freeCyclicCell(gch, c)
+      # cast to PCell is correct here:
+      var c = cast[PCell](x)
+      if c.refcount == rcBlack: c.refcount = rcWhite
+      else: freeCyclicCell(gch, c)
 
 when false:
   proc newGcInvariant*() =
     for x in allObjects(gch.region):
-      if isCell(x):
-        var c = cast[PCell](x)
-        if c.typ == nil:
-          writeStackTrace()
-          quit 1
+      var c = cast[PCell](x)
+      if c.typ == nil:
+        writeStackTrace()
+        quit 1
 
 proc markGlobals(gch: var GcHeap) =
   for i in 0 .. globalMarkersLen-1: globalMarkers[i]()

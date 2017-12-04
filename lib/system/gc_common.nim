@@ -374,9 +374,8 @@ proc deallocHeap*(runFinalizers = true; allowGcAfterwards = true) =
   ## happens to ensure the GC can continue to work after the call
   ## to ``deallocHeap``.
   template deallocCell(x) =
-    if isCell(x):
-      # cast to PCell is correct here:
-      prepareDealloc(cast[PCell](x))
+    # cast to PCell is correct here:
+    prepareDealloc(cast[PCell](x))
 
   if runFinalizers:
     when not declared(allObjectsAsProc):
@@ -389,7 +388,7 @@ proc deallocHeap*(runFinalizers = true; allowGcAfterwards = true) =
         if spaceIter.state < 0: break
         deallocCell(x)
 
-  deallocOsPages(gch.region)
+  deallocOsPages(gch.region.t.osa)
   zeroMem(addr gch.region, sizeof(gch.region))
   if allowGcAfterwards:
     initGC()

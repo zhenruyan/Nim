@@ -301,6 +301,7 @@ proc unsureAsgnRef(dest: PPointer, src: pointer) {.compilerProc.} =
 
 proc initGC() =
   when not defined(useNimRtl):
+    setup(gch.region.t)
     when traceGC:
       for i in low(CellState)..high(CellState): init(states[i])
     gch.cycleThreshold = InitialCycleThreshold
@@ -626,10 +627,9 @@ proc freeCyclicCell(gch: var GcHeap, c: PCell) =
 when useBackupGc:
   proc sweep(gch: var GcHeap) =
     for x in allObjects(gch.region):
-      if isCell(x):
-        # cast to PCell is correct here:
-        var c = cast[PCell](x)
-        if c notin gch.marked: freeCyclicCell(gch, c)
+      # cast to PCell is correct here:
+      var c = cast[PCell](x)
+      if c notin gch.marked: freeCyclicCell(gch, c)
 
 when useMarkForDebug or useBackupGc:
   proc markS(gch: var GcHeap, c: PCell) =

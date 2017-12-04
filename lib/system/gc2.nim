@@ -496,12 +496,11 @@ proc GC_dumpHeap*(file: File) =
   while true:
     let x = allObjectsAsProc(gch.region, addr spaceIter)
     if spaceIter.state < 0: break
-    if isCell(x):
-      # cast to PCell is correct here:
-      var c = cast[PCell](x)
-      writeCell(file, "cell ", c)
-      forAllChildren(c, waDebug)
-      c_fprintf(file, "end\n")
+    # cast to PCell is correct here:
+    var c = cast[PCell](x)
+    writeCell(file, "cell ", c)
+    forAllChildren(c, waDebug)
+    c_fprintf(file, "end\n")
   gch.pDumpHeapFile = nil
 
 proc GC_dumpHeap() =
@@ -535,15 +534,14 @@ proc sweep(gch: var GcHeap): bool =
     let x = allObjectsAsProc(gch.region, addr gch.spaceIter)
     if gch.spaceIter.state < 0: break
     takeTime()
-    if isCell(x):
-      # cast to PCell is correct here:
-      var c = cast[PCell](x)
-      gcAssert c.color != rcGrey, "cell is still grey?"
-      if c.color == white: freeCyclicCell(gch, c)
-      # Since this is incremental, we MUST not set the object to 'white' here.
-      # We could set all the remaining objects to white after the 'sweep'
-      # completed but instead we flip the meaning of black/white to save one
-      # traversal over the heap!
+    # cast to PCell is correct here:
+    var c = cast[PCell](x)
+    gcAssert c.color != rcGrey, "cell is still grey?"
+    if c.color == white: freeCyclicCell(gch, c)
+    # Since this is incremental, we MUST not set the object to 'white' here.
+    # We could set all the remaining objects to white after the 'sweep'
+    # completed but instead we flip the meaning of black/white to save one
+    # traversal over the heap!
     checkTime()
   # prepare for next iteration:
   #echo "loop end"
