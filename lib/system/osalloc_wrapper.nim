@@ -77,6 +77,7 @@ proc addHeapLink(a: var OsAllocs; p: pointer, size: int) =
 
 proc llDeallocAll(a: var OsAllocs) =
   var it = a.llmem
+  a.llmem = nil
   while it != nil:
     # we know each block in the list has the size of 1 page:
     var next = it.next

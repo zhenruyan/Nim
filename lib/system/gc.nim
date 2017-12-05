@@ -200,7 +200,8 @@ proc incRef(c: PCell) {.inline.} =
 
 proc nimGCref(p: pointer) {.compilerProc.} =
   # we keep it from being collected by pretending it's not even allocated:
-  add(gch.additionalRoots, usrToCell(p))
+  when useMarkForDebug or useBackupGc:
+    add(gch.additionalRoots, usrToCell(p))
   incRef(usrToCell(p))
 
 proc rtlAddCycleRoot(c: PCell) {.rtl, inl.} =
@@ -225,16 +226,17 @@ proc decRef(c: PCell) {.inline.} =
     rtlAddZCT(c)
 
 proc nimGCunref(p: pointer) {.compilerProc.} =
-  let cell = usrToCell(p)
-  var L = gch.additionalRoots.len-1
-  var i = L
-  let d = gch.additionalRoots.d
-  while i >= 0:
-    if d[i] == cell:
-      d[i] = d[L]
-      dec gch.additionalRoots.len
-      break
-    dec(i)
+  when useMarkForDebug or useBackupGc:
+    let cell = usrToCell(p)
+    var L = gch.additionalRoots.len-1
+    var i = L
+    let d = gch.additionalRoots.d
+    while i >= 0:
+      if d[i] == cell:
+        d[i] = d[L]
+        dec gch.additionalRoots.len
+        break
+      dec(i)
   decRef(usrToCell(p))
 
 include gc_common
@@ -321,10 +323,10 @@ proc initGC() =
     when hasThreadSupport:
       gch.toDispose = initSharedList[pointer]()
 
+type
+  GlobalMarkerProc = proc () {.nimcall, benign.}
+
 when useMarkForDebug or useBackupGc:
-  type
-    GlobalMarkerProc = proc () {.nimcall, benign.}
-  {.deprecated: [TGlobalMarkerProc: GlobalMarkerProc].}
   var
     globalMarkersLen: int
     globalMarkers: array[0.. 7_000, GlobalMarkerProc]
@@ -336,6 +338,8 @@ when useMarkForDebug or useBackupGc:
     else:
       echo "[GC] cannot register global variable; too many global variables"
       quit 1
+else:
+  proc nimRegisterGlobalMarker(markerProc: GlobalMarkerProc) {.compilerProc.} = discard
 
 proc cellsetReset(s: var CellSet) =
   deinit(s)
@@ -720,6 +724,7 @@ proc collectCycles(gch: var GcHeap) =
       sysAssert isAllocatedPtr(gch.region, d[i]), "collectCycles"
       markS(gch, d[i])
     markGlobals(gch)
+    inc(gch.stat.cycleCollections)
     sweep(gch)
 
 proc gcMark(gch: var GcHeap, p: pointer) {.inline.} =
@@ -839,7 +844,6 @@ proc collectCTBody(gch: var GcHeap) =
       if getOccupiedMem(gch.region) >= gch.cycleThreshold or alwaysCycleGC:
         collectCycles(gch)
         #discard collectZCT(gch)
-        inc(gch.stat.cycleCollections)
         gch.cycleThreshold = max(InitialCycleThreshold, getOccupiedMem() *
                                  CycleIncrease)
         gch.stat.maxThreshold = max(gch.stat.maxThreshold, gch.cycleThreshold)

@@ -357,7 +357,9 @@ proc prepareDealloc(cell: PCell) =
     when useMarkForDebug:
       gcAssert(cell notin gch.marked, "Cell still alive!")
   let t = cell.typ
+  sysAssert(t != nil, "prepareDealloc: t is nil")
   if t.finalizer != nil:
+    sysAssert(t.kind == tyRef, "prepareDealloc: t has a finalizer but is not a 'ref'")
     # the finalizer could invoke something that
     # allocates memory; this could trigger a garbage
     # collection. Since we are already collecting we

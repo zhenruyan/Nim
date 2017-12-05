@@ -104,7 +104,7 @@ proc allocAvlNode(a: var MemRegion, key, upperBound: int): PAvlNode =
     result = a.freeAvlNodes
     a.freeAvlNodes = a.freeAvlNodes.link[0]
   else:
-    result = cast[PAvlNode](alloc(a.t, sizeof(AvlNode)))
+    result = cast[PAvlNode](llAlloc(a.t.osa, sizeof(result[])))
     when defined(avlcorruption):
       cprintf("tracking location: %p\n", result)
   result.key = key
@@ -135,7 +135,7 @@ proc intSetGet(t: IntSet, key: int): PTrunk =
 proc intSetPut(a: var MemRegion, t: var IntSet, key: int): PTrunk =
   result = intSetGet(t, key)
   if result == nil:
-    result = cast[PTrunk](alloc(a.t, sizeof(result[])))
+    result = cast[PTrunk](llAlloc(a.t.osa, sizeof(result[])))
     result.next = t.data[key and high(t.data)]
     t.data[key and high(t.data)] = result
     result.key = key
@@ -359,7 +359,7 @@ proc rawAlloc0(a: var MemRegion, requestedSize: int): pointer =
   zeroMem(result, requestedSize)
 
 proc rawDealloc(a: var MemRegion, p: pointer) =
-  #sysAssert(isAllocatedPtr(a, p), "rawDealloc: no allocated pointer")
+  sysAssert(isAllocatedPtr(a, p), "rawDealloc: no allocated pointer")
   sysAssert(allocInv(a), "rawDealloc: begin")
   var c = pageAddr(p)
   if isSmallChunk(c):
@@ -396,7 +396,7 @@ proc rawDealloc(a: var MemRegion, p: pointer) =
     sysAssert(cast[int](p) -% bigChunkOverhead() == cast[int](c),
         "rawDealloc: pointer arithmetic does not work out")
     # set to 0xff to check for usage after free bugs:
-    when overwriteFree: c_memset(p, 0'i32, c.size -% bigChunkOverhead())
+    when overwriteFree: c_memset(p, -1'i32, c.size -% bigChunkOverhead())
     # free big chunk
     var c = cast[PBigChunk](c)
     a.deleted = getBottom(a)
@@ -420,6 +420,7 @@ proc isAllocatedPtr(a: MemRegion, p: pointer): bool =
       result = p == addr(c.data) and cast[ptr FreeCell](p).zeroField >% 1
 
 proc prepareForInteriorPointerChecking(a: var MemRegion) {.inline.} =
+  if a.root == nil: a.root = getBottom(a)
   a.minLargeObj = lowGauge(a.root)
   a.maxLargeObj = highGauge(a.root)
 

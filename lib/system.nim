@@ -1487,6 +1487,8 @@ template sysAssert(cond: bool, msg: string) =
   when defined(useSysAssert):
     if not cond:
       echo "[SYSASSERT] ", msg
+      let p: ptr int = nil
+      let x = p[]
       quit 1
 
 const hasAlloc = (hostOS != "standalone" or not defined(nogc)) and not defined(nimscript)
