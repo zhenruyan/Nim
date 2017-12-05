@@ -121,6 +121,7 @@ template release(gch: GcHeap) =
 
 proc initGC() =
   when not defined(useNimRtl):
+    setup(gch.region.t)
     gch.red = (1-gch.black)
     gch.cycleThreshold = InitialCycleThreshold
     gch.stat.stackScans = 0

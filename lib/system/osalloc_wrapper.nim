@@ -52,8 +52,6 @@ proc llAlloc(a: var OsAllocs, size: int): pointer =
     sysAssert roundup(size+sizeof(LLChunk), PageSize) == PageSize, "roundup 6"
     var old = a.llmem # can be nil and is correct with nil
     a.llmem = cast[PLLChunk](osAllocPages(PageSize))
-    when defined(avlcorruption):
-      trackLocation(a.llmem, PageSize)
     incCurrMem(a, PageSize)
     a.llmem.size = PageSize - sizeof(LLChunk)
     a.llmem.acc = sizeof(LLChunk)

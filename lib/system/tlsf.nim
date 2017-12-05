@@ -138,6 +138,9 @@ type
     slBitmap*: array[FL_INDEX_COUNT, uint32] ## Head of free lists.
     blocks*: array[FL_INDEX_COUNT, array[SL_INDEX_COUNT, HeaderPtr]]
     osa: OsAllocs
+    when defined(tlsfProtect):
+      handoutLen: int
+      handout: array[1000_000, pointer]
   Pool = pointer
 
 proc size(blk: HeaderPtr): ByteAddress =
@@ -425,6 +428,7 @@ proc prepareUsed(r: var Tlsf; blk: HeaderPtr; size: ByteAddress): pointer =
     trimFree(r, blk, size)
     markAsUsed(blk)
     result = toPtr(blk)
+    dec r.osa.freeMem, size
 
 proc setup(r: var Tlsf) =
   ## Clear structure and point all empty lists at the null block.
@@ -558,10 +562,27 @@ proc createWithPool(r: var Tlsf; mem: pointer; bytes: int) =
   setup(r)
   addPool(r, mem, bytes)
 
+when defined(tlsfProtect):
+  proc markAllocated(r: var Tlsf; p: pointer) =
+    if r.handoutLen > high(r.handout):
+      sysAssert(false, "cannot check memory allocated pointer")
+    r.handout[r.handoutLen] = p
+    inc r.handoutLen
+
+  proc markDeallocated(r: var Tlsf; p: pointer) =
+    for i in 0 .. r.handoutLen - 1:
+      if r.handout[i] == p:
+        r.handout[i] = r.handout[r.handoutLen-1]
+        dec r.handoutLen
+        return
+    sysAssert(false, "pointer dealloc of an unknown pointer")
+
 proc alloc(r: var Tlsf; size: ByteAddress): pointer =
   let adjust = adjustRequestSize(size, ALIGN_SIZE)
   let blk = locateFree(r, adjust)
-  return prepareUsed(r, blk, adjust)
+  result = prepareUsed(r, blk, adjust)
+  when defined(tlsfProtect):
+    markAllocated(r, result)
 
 proc memalign(r: var Tlsf; align: ByteAddress; size: ByteAddress): pointer =
   var adjust = adjustRequestSize(size, ALIGN_SIZE)
@@ -593,10 +614,14 @@ proc memalign(r: var Tlsf; align: ByteAddress; size: ByteAddress): pointer =
     if gap != 0:
       sysAssert(gap >= gapMinimum, "gap size too small")
       blk = trimFreeLeading(r, blk, gap)
-  return prepareUsed(r, blk, adjust)
+  result = prepareUsed(r, blk, adjust)
+  when defined(tlsfProtect):
+    markAllocated(r, result)
 
 proc dealloc(r: var Tlsf; z: pointer) =
   sysAssert(z != nil, "nil passed to dealloc")
+  when defined(tlsfProtect):
+    markDeallocated(r, z)
   var blk = fromPtr(z)
   sysAssert(not isFree(blk), "block already marked as free")
   inc(r.osa.freeMem, blk.size)

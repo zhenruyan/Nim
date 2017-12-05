@@ -43,7 +43,6 @@ type
   FreeCell = object
     next: ptr FreeCell  # next free cell in chunk (overlaid with refcount)
     zeroField: int       # 0 means cell is not used (overlaid with typ field)
-                         # 1 means cell is manually managed pointer
                          # otherwise a PNimType is stored in there
 
   PChunk = ptr BaseChunk
@@ -182,6 +181,9 @@ iterator elements(t: IntSet): int {.inline.} =
 proc isSmallChunk(c: PChunk): bool {.inline.} =
   return c.size <= SmallChunkSize-smallChunkOverhead()
 
+proc isCell(p: pointer): bool {.inline.} =
+  result = cast[ptr FreeCell](p).zeroField >% 1
+
 iterator allObjects(m: var MemRegion): pointer {.inline.} =
   m.locked = true
   for s in elements(m.chunkStarts):
@@ -195,11 +197,14 @@ iterator allObjects(m: var MemRegion): pointer {.inline.} =
         var a = cast[ByteAddress](addr(c.data))
         let limit = a + c.acc
         while a <% limit:
-          yield cast[pointer](a)
+          if isCell(cast[pointer](a)):
+            yield cast[pointer](a)
           a = a +% size
       else:
         let c = cast[PBigChunk](c)
-        yield addr(c.data)
+        let r = addr(c.data)
+        if isCell(r):
+          yield r
   m.locked = false
 
 proc iterToProc*(iter: typed, envType: typedesc; procName: untyped) {.
@@ -256,7 +261,7 @@ proc freeBigChunk(a: var MemRegion, c: PBigChunk) =
 proc getBigChunk(a: var MemRegion, size: int): PBigChunk =
   let s = size + bigChunkOverhead()
   result = cast[PBigChunk](memalign(a.t, PageSize, s))
-  result.size = roundup(s, PageSize)
+  result.size = s
   incl(a, a.chunkStarts, pageIndex(result))
 
 proc getSmallChunk(a: var MemRegion): PSmallChunk =
@@ -266,7 +271,7 @@ proc getSmallChunk(a: var MemRegion): PSmallChunk =
 # -----------------------------------------------------------------------------
 proc isAllocatedPtr(a: MemRegion, p: pointer): bool {.benign.}
 
-when true:
+when false:
   template allocInv(a: MemRegion): bool = true
 else:
   proc allocInv(a: MemRegion): bool =
@@ -386,12 +391,17 @@ proc rawDealloc(a: var MemRegion, p: pointer) =
     sysAssert(((cast[ByteAddress](p) and PageMask) - smallChunkOverhead()) %%
                s == 0, "rawDealloc 2")
   else:
+    # in theory, we have to subtract 'bigChunkOverhead' from the pointer, but since it's
+    # page aligned we do not have to do this here:
+    sysAssert(cast[int](p) -% bigChunkOverhead() == cast[int](c),
+        "rawDealloc: pointer arithmetic does not work out")
     # set to 0xff to check for usage after free bugs:
-    when overwriteFree: c_memset(p, -1'i32, c.size -% bigChunkOverhead())
+    when overwriteFree: c_memset(p, 0'i32, c.size -% bigChunkOverhead())
     # free big chunk
     var c = cast[PBigChunk](c)
     a.deleted = getBottom(a)
     del(a, a.root, cast[int](addr(c.data)))
+    #cprintf("rawDealloc: freeBigChunk of size %ld\n", c.size)
     freeBigChunk(a, c)
   sysAssert(allocInv(a), "rawDealloc: end")
   when logAlloc: cprintf("rawDealloc: %p\n", p)

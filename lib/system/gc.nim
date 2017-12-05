@@ -612,6 +612,7 @@ proc growObj(old: pointer, newsize: int): pointer {.rtl.} =
 # ---------------- cycle collector -------------------------------------------
 
 proc freeCyclicCell(gch: var GcHeap, c: PCell) =
+  sysAssert isAllocatedPtr(gch.region, c), "freeCyclicCell: invalid pointer"
   prepareDealloc(c)
   gcTrace(c, csCycFreed)
   track("cycle collector dealloc cell", c, 0)

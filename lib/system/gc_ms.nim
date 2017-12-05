@@ -223,6 +223,7 @@ include gc_common
 
 proc initGC() =
   when not defined(useNimRtl):
+    setup(gch.region.t)
     gch.cycleThreshold = InitialThreshold
     gch.stat.collections = 0
     gch.stat.maxThreshold = 0
