@@ -416,10 +416,11 @@ proc trimFreeLeading(r: var Tlsf; blk: HeaderPtr; size: ByteAddress): HeaderPtr 
 proc locateFree(r: var Tlsf; size: ByteAddress): HeaderPtr =
   sysAssert(size != 0, "locateFree: size must zero")
   var (fl, sl) = mappingSearch(size)
-  result = searchSuitableBlock(r, fl, sl)
-  if result != nil:
-    sysAssert(size(result) >= size, "locateFree: wrong sizes")
-    removeFreeBlock(r, result, fl, sl)
+  if fl < FL_INDEX_COUNT:
+    result = searchSuitableBlock(r, fl, sl)
+    if result != nil:
+      sysAssert(size(result) >= size, "locateFree: wrong sizes")
+      removeFreeBlock(r, result, fl, sl)
 
 proc prepareUsed(r: var Tlsf; blk: HeaderPtr; size: ByteAddress): pointer =
   result = nil
