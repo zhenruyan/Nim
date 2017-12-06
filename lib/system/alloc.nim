@@ -44,6 +44,8 @@ type
     next: ptr FreeCell  # next free cell in chunk (overlaid with refcount)
     zeroField: int       # 0 means cell is not used (overlaid with typ field)
                          # otherwise a PNimType is stored in there
+    when defined(corruption):
+      cellId: int
 
   PChunk = ptr BaseChunk
   PBigChunk = ptr BigChunk
@@ -185,27 +187,26 @@ proc isCell(p: pointer): bool {.inline.} =
   result = cast[ptr FreeCell](p).zeroField >% 1
 
 iterator allObjects(m: var MemRegion): pointer {.inline.} =
-  m.locked = true
   for s in elements(m.chunkStarts):
-    # we need to check here again as it could have been modified:
-    if s in m.chunkStarts:
-      let c = cast[PChunk](s shl PageShift)
-      if isSmallChunk(c):
-        var c = cast[PSmallChunk](c)
+    sysAssert s in m.chunkStarts, "not in chunkStarts anymore?"
+    let c = cast[PChunk](s shl PageShift)
+    if isSmallChunk(c):
+      m.locked = true
+      var c = cast[PSmallChunk](c)
 
-        let size = c.size
-        var a = cast[ByteAddress](addr(c.data))
-        let limit = a + c.acc
-        while a <% limit:
-          if isCell(cast[pointer](a)):
-            yield cast[pointer](a)
-          a = a +% size
-      else:
-        let c = cast[PBigChunk](c)
-        let r = addr(c.data)
-        if isCell(r):
-          yield r
-  m.locked = false
+      let size = c.size
+      var a = cast[ByteAddress](addr(c.data))
+      let limit = a + c.acc
+      while a <% limit and m.locked:
+        if isCell(cast[pointer](a)):
+          yield cast[pointer](a)
+        a = a +% size
+      m.locked = false
+    else:
+      let c = cast[PBigChunk](c)
+      let r = addr(c.data)
+      if isCell(r):
+        yield r
 
 proc iterToProc*(iter: typed, envType: typedesc; procName: untyped) {.
                       magic: "Plugin", compileTime.}
@@ -255,8 +256,13 @@ proc listRemove[T](head: var T, c: T) {.inline.} =
 
 proc freeBigChunk(a: var MemRegion, c: PBigChunk) =
   sysAssert(c.size >= PageSize, "freeBigChunk")
-  dealloc(c)
   excl(a.chunkStarts, pageIndex(c))
+  dealloc(a.t, c)
+
+proc freeSmallChunk(a: var MemRegion; c: PSmallChunk) =
+  sysAssert(c.size < PageSize, "freeSmallChunk")
+  excl(a.chunkStarts, pageIndex(c))
+  dealloc(a.t, c)
 
 proc getBigChunk(a: var MemRegion, size: int): PBigChunk =
   let s = size + bigChunkOverhead()
@@ -271,7 +277,7 @@ proc getSmallChunk(a: var MemRegion): PSmallChunk =
 # -----------------------------------------------------------------------------
 proc isAllocatedPtr(a: MemRegion, p: pointer): bool {.benign.}
 
-when false:
+when true:
   template allocInv(a: MemRegion): bool = true
 else:
   proc allocInv(a: MemRegion): bool =
@@ -387,7 +393,8 @@ proc rawDealloc(a: var MemRegion, p: pointer) =
       inc(c.free, s)
       if c.free == SmallChunkSize-smallChunkOverhead():
         listRemove(a.freeSmallChunks[s div MemAlign], c)
-        dealloc(a.t, c)
+        freeSmallChunk(a, c)
+        a.locked = false
     sysAssert(((cast[ByteAddress](p) and PageMask) - smallChunkOverhead()) %%
                s == 0, "rawDealloc 2")
   else:

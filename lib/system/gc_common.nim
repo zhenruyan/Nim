@@ -356,6 +356,7 @@ proc prepareDealloc(cell: PCell) =
   when declared(useMarkForDebug):
     when useMarkForDebug:
       gcAssert(cell notin gch.marked, "Cell still alive!")
+  sysAssert isAllocatedPtr(gch.region, cell), "prepareDealloc: that is not even an allocated pointer"
   let t = cell.typ
   sysAssert(t != nil, "prepareDealloc: t is nil")
   if t.finalizer != nil:
