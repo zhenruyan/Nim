@@ -490,6 +490,8 @@ proc getTotalMem(a: MemRegion): int {.inline.} = result = a.t.osa.currMem
 proc getOccupiedMem(a: MemRegion): int {.inline.} =
   result = a.t.osa.currMem - a.t.osa.freeMem
 
+proc deallocOsPages(a: var MemRegion) = deallocOsPages(a.t.osa)
+
 # ---------------------- thread memory region -------------------------------
 
 template instantiateForRegion(allocator: untyped) =
@@ -575,13 +577,13 @@ template instantiateForRegion(allocator: untyped) =
       releaseSys(heapLock)
 
     proc getFreeSharedMem(): int =
-      sharedMemStatsShared(sharedHeap.freeMem)
+      sharedMemStatsShared(sharedHeap.getFreeMem)
 
     proc getTotalSharedMem(): int =
-      sharedMemStatsShared(sharedHeap.currMem)
+      sharedMemStatsShared(sharedHeap.getTotalMem)
 
     proc getOccupiedSharedMem(): int =
-      sharedMemStatsShared(sharedHeap.currMem - sharedHeap.freeMem)
+      sharedMemStatsShared(sharedHeap.getOccupiedMem)
   {.pop.}
 
 {.pop.}
