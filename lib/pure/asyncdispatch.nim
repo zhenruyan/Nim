@@ -215,8 +215,9 @@ when defined(windows) or defined(nimdoc):
       ioPort: Handle
       handles: HashSet[AsyncFD]
 
-    CustomOverlapped = object of OVERLAPPED
+    CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
+      hFile*: Handle
 
     PCustomOverlapped* = ref CustomOverlapped
 
@@ -284,6 +285,33 @@ when defined(windows) or defined(nimdoc):
     let p = getGlobalDispatcher()
     p.handles.len != 0 or p.timers.len != 0 or p.callbacks.len != 0
 
+  var
+    traceA*: array[10_000, (pointer, int)]
+    traceLen*: int
+
+  proc trace*(x: PCustomOverlapped; y: int) =
+    let x = cast[pointer](x)
+    traceA[traceLen] = (x, y)
+    inc traceLen
+
+  proc traceU*(x: PCustomOverlapped; incr: int) =
+    let x = cast[pointer](x)
+    for i in 0..<traceLen:
+      if traceA[i][0] == x:
+        inc(traceA[i][1], incr)
+        break
+    #if incr != 1: writeStackTrace()
+
+  proc untrace*(x: PCustomOverlapped) =
+    let x = cast[pointer](x)
+    for i in 0..<traceLen:
+      if traceA[i][0] == x:
+        #if traceA[i][1] == 64:
+        #  echo "yes, but also freeing some of these"
+        traceA[i] = traceA[traceLen-1]
+        dec traceLen
+        break
+
   proc poll*(timeout = 500) =
     ## Waits for completion events and processes them. Raises ``ValueError``
     ## if there are no pending operations.
@@ -303,11 +331,12 @@ when defined(windows) or defined(nimdoc):
       var customOverlapped: PCustomOverlapped
       let res = getQueuedCompletionStatus(p.ioPort,
           addr lpNumberOfBytesTransferred, addr lpCompletionKey,
-          cast[ptr POVERLAPPED](addr customOverlapped), llTimeout).bool
+          cast[ptr POVERLAPPED](addr customOverlapped), llTimeout)
+      if customOverlapped != nil: untrace(customOverlapped)
 
       # http://stackoverflow.com/a/12277264/492186
       # TODO: http://www.serverframework.com/handling-multiple-pending-socket-read-and-write-operations.html
-      if res:
+      if res != 0:
         # This is useful for ensuring the reliability of the overlapped struct.
         assert customOverlapped.data.fd == lpCompletionKey.AsyncFD
 
