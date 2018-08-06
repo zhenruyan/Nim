@@ -459,7 +459,7 @@ proc semOverloadedCall(c: PContext, n, nOrig: PNode,
   var r = resolveOverloads(c, n, nOrig, filter, flags, errors, efExplain in flags)
   if r.state == csMatch:
     # this may be triggered, when the explain pragma is used
-    if errors.len > 0:
+    if errors.len > 0 and efExplain in flags:
       let (_, candidates) = presentFailedCandidates(c, n, errors)
       message(c.config, n.info, hintUserRaw,
               "Non-matching candidates for " & renderTree(n) & "\n" &

@@ -277,7 +277,7 @@ template callFormatOption(res, arg, option) {.dirty.} =
   else:
     format($arg, option, res)
 
-macro `&`*(pattern: string): untyped =
+macro `&`*(pattern: untyped{lit}): untyped =
   ## For a specification of the ``&`` macro, see the module level documentation.
   if pattern.kind notin {nnkStrLit..nnkTripleStrLit}:
     error "string formatting (fmt(), &) only works with string literals", pattern
@@ -333,7 +333,7 @@ macro `&`*(pattern: string): untyped =
   when defined(debugFmtDsl):
     echo repr result
 
-template fmt*(pattern: string): untyped =
+template fmt*(pattern: untyped{lit}): untyped =
   ## An alias for ``&``.
   bind `&`
   &pattern

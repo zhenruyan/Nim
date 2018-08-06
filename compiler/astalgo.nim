@@ -502,7 +502,7 @@ proc strTableContains*(t: TStrTable, n: PSym): bool =
 
 proc strTableRawInsert(data: var TSymSeq, n: PSym) =
   var h: Hash = n.name.h and high(data)
-  if sfImmediate notin n.flags:
+  if {sfImmediate, sfAllUntyped} * n.flags == {}:
     # fast path:
     while data[h] != nil:
       if data[h] == n:

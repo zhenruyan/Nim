@@ -229,7 +229,9 @@ proc semGenericStmt(c: PContext, n: PNode,
       let sc = symChoice(c, fn, s, if s.isMixedIn: scForceOpen else: scOpen)
       case s.kind
       of skMacro:
-        if macroToExpand(s) and sc.safeLen <= 1:
+        # new feature: overloading by arity only in an 'immediate' expand
+        # context. XXX This needs to be documented.
+        if macroToExpand(s) and (sc.safeLen <= 1 or s.typ.len == n.len):
           styleCheckUse(fn.info, s)
           result = semMacroExpr(c, n, n, s, {efNoSemCheck})
           result = semGenericStmt(c, result, flags, ctx)
@@ -238,7 +240,7 @@ proc semGenericStmt(c: PContext, n: PNode,
           result = n
         mixinContext = true
       of skTemplate:
-        if macroToExpand(s) and sc.safeLen <= 1:
+        if macroToExpand(s) and (sc.safeLen <= 1 or s.typ.len == n.len):
           styleCheckUse(fn.info, s)
           result = semTemplateExpr(c, n, s, {efNoSemCheck})
           result = semGenericStmt(c, result, flags, ctx)
