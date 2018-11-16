@@ -1351,7 +1351,7 @@ proc lhsDoesAlias(a, b: PNode): bool =
     if isPartOf(a, y) != arNo: return true
 
 proc genSeqConstr(p: BProc, n: PNode, d: var TLoc) =
-  var arr, tmp: TLoc
+  var tmp: TLoc
   # bug #668
   let doesAlias = lhsDoesAlias(d.lode, n)
   let dest = if doesAlias: addr(tmp) else: addr(d)
@@ -1359,14 +1359,19 @@ proc genSeqConstr(p: BProc, n: PNode, d: var TLoc) =
     getTemp(p, n.typ, tmp)
   elif d.k == locNone:
     getTemp(p, n.typ, d)
+  var arr = newSeq[TLoc](n.len)
+  for i in 0 .. n.len-1:
+    initLocExpr(p, n[i], arr[i])
+
   # generate call to newSeq before adding the elements per hand:
   genNewSeqAux(p, dest[], intLiteral(sonsLen(n)),
     optNilSeqs notin p.options and n.len == 0)
-  for i in countup(0, sonsLen(n) - 1):
-    initLoc(arr, locExpr, n[i], OnHeap)
-    arr.r = ropecg(p.module, "$1$3[$2]", rdLoc(dest[]), intLiteral(i), dataField(p))
-    arr.storage = OnHeap            # we know that sequences are on the heap
-    expr(p, n[i], arr)
+  for i in 0 .. high(arr):
+    var atExpr: TLoc
+    initLoc(atExpr, locExpr, n[i], OnHeap)
+    atExpr.r = ropecg(p.module, "$1$3[$2]", rdLoc(dest[]), intLiteral(i), dataField(p))
+    genAssignment(p, atExpr, arr[i], {})
+
   gcUsage(p.config, n)
   if doesAlias:
     if d.k == locNone:
