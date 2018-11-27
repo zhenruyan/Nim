@@ -1223,10 +1223,12 @@ proc genNewSeqAux(p: BProc, dest: TLoc, length: Rope; lenIsZero: bool) =
         linefmt(p, cpsStmts, "$1 = $2;$n", dest.rdLoc, call.rdLoc)
   else:
     if lenIsZero:
-      call.r = rope"NIM_NIL"
+      if p.config.selectedGC != gcDestructors:
+        call.r = rope"NIM_NIL"
+        genAssignment(p, dest, call, {})
     else:
       call.r = ropecg(p.module, "($1) #newSeq($2, $3)", args)
-    genAssignment(p, dest, call, {})
+      genAssignment(p, dest, call, {})
 
 proc genNewSeq(p: BProc, e: PNode) =
   var a, b: TLoc
@@ -1594,7 +1596,10 @@ proc genSetLengthSeq(p: BProc, e: PNode, d: var TLoc) =
 
 proc genSetLengthStr(p: BProc, e: PNode, d: var TLoc) =
   if p.config.selectedGc == gcDestructors:
-    binaryStmtAddr(p, e, d, "#setLengthStrV2($1, $2);$n")
+    if p.config.cmd == cmdCompileToCpp:
+      binaryStmt(p, e, d, "#setLengthStrV2($1, $2);$n")
+    else:
+      binaryStmtAddr(p, e, d, "#setLengthStrV2($1, $2);$n")
   else:
     var a, b, call: TLoc
     if d.k != locNone: internalError(p.config, e.info, "genSetLengthStr")
@@ -1941,7 +1946,10 @@ proc genMagicExpr(p: BProc, e: PNode, d: var TLoc, op: TMagic) =
   of mConStrStr: genStrConcat(p, e, d)
   of mAppendStrCh:
     if p.config.selectedGC == gcDestructors:
-      binaryStmtAddr(p, e, d, "#nimAddCharV1($1, $2);$n")
+      if p.config.cmd == cmdCompileToCpp:
+        binaryStmt(p, e, d, "#nimAddCharV1($1, $2);$n")
+      else:
+        binaryStmtAddr(p, e, d, "#nimAddCharV1($1, $2);$n")
     else:
       var dest, b, call: TLoc
       initLoc(call, locCall, e, OnHeap)

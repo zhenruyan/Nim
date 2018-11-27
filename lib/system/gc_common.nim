@@ -41,10 +41,11 @@ when defined(nimTypeNames):
     ## Iterate over summaries of types on heaps.
     ## This data may be inaccurate if allocations
     ## are made by the iterator body.
-    if strDesc.nextType == nil:
-      strDesc.nextType = nimTypeRoot
-      strDesc.name = "string"
-      nimTypeRoot = addr strDesc
+    when declared(strDesc):
+      if strDesc.nextType == nil:
+        strDesc.nextType = nimTypeRoot
+        strDesc.name = "string"
+        nimTypeRoot = addr strDesc
     var it = nimTypeRoot
     while it != nil:
       if (it.instances > 0 or it.sizes != 0):

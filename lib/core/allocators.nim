@@ -11,7 +11,9 @@ type
   AllocatorFlag* {.pure.} = enum  ## flags describing the properties of the allocator
     ThreadLocal ## the allocator is thread local only.
     ZerosMem    ## the allocator always zeros the memory on an allocation
-  Allocator* = ptr object {.inheritable.}
+
+  Allocator* = ptr AllocatorObj
+  AllocatorObj* {.inheritable.} = object
     alloc*: proc (a: Allocator; size: int; alignment: int = 8): pointer {.nimcall.}
     dealloc*: proc (a: Allocator; p: pointer; size: int) {.nimcall.}
     realloc*: proc (a: Allocator; p: pointer; oldSize, newSize: int): pointer {.nimcall.}
@@ -19,11 +21,28 @@ type
     flags*: set[AllocatorFlag]
 
 var
+  localAllocatorStorage {.threadvar.}: AllocatorObj
   localAllocator {.threadvar.}: Allocator
   sharedAllocator: Allocator
 
 proc getLocalAllocator*(): Allocator =
+
   result = localAllocator
+  if result == nil:
+    result = localAllocatorStorage.addr
+
+    result.alloc =
+      proc (a: Allocator; size: int; alignment: int = 8): pointer {.nimcall.} =
+        system.alloc(size)
+    result.dealloc =
+      proc (a: Allocator; p: pointer; size: int) {.nimcall.} =
+        system.dealloc(p)
+    result.realloc =
+      proc (a: Allocator; p: pointer; oldSize, newSize: int): pointer {.nimcall.} =
+        system.realloc(p, newSize)
+    result.deallocAll = nil # *: proc (a: Allocator) {.nimcall.}
+    result.flags = {AllocatorFlag.ThreadLocal}
+    localAllocator = result
 
 proc setLocalAllocator*(a: Allocator) =
   localAllocator = a
@@ -33,16 +52,3 @@ proc getSharedAllocator*(): Allocator =
 
 proc setSharedAllocator*(a: Allocator) =
   sharedAllocator = a
-
-when false:
-  proc alloc*(size: int; alignment: int = 8): pointer =
-    let a = getCurrentAllocator()
-    result = a.alloc(a, size, alignment)
-
-  proc dealloc*(p: pointer; size: int) =
-    let a = getCurrentAllocator()
-    a.dealloc(a, p, size)
-
-  proc realloc*(p: pointer; oldSize, newSize: int): pointer =
-    let a = getCurrentAllocator()
-    result = a.realloc(a, p, oldSize, newSize)
