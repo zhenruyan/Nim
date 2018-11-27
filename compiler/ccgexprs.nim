@@ -450,7 +450,7 @@ proc binaryStmtAddr(p: BProc, e: PNode, d: var TLoc, frmt: string) =
   if d.k != locNone: internalError(p.config, e.info, "binaryStmtAddr")
   initLocExpr(p, e.sons[1], a)
   initLocExpr(p, e.sons[2], b)
-  lineCg(p, cpsStmts, frmt, addrLoc(p.config, a), rdLoc(b))
+  lineCg(p, cpsStmts, frmt, strLoc(p.config, a), rdLoc(b))
 
 proc unaryStmt(p: BProc, e: PNode, d: var TLoc, frmt: string) =
   var a: TLoc
@@ -1019,7 +1019,7 @@ proc gcUsage(conf: ConfigRef; n: PNode) =
   if conf.selectedGC == gcNone: message(conf, n.info, warnGcMem, n.renderTree)
 
 proc strLoc(p: BProc; d: TLoc): Rope =
-  if p.config.selectedGc == gcDestructors:
+  if p.config.selectedGc == gcDestructors and p.config.cmd != cmdCompileToCpp:
     result = addrLoc(p.config, d)
   else:
     result = rdLoc(d)
@@ -1102,7 +1102,7 @@ proc genStrAppend(p: BProc, e: PNode, d: var TLoc) =
                         strLoc(p, dest), rdLoc(a)))
   if p.config.selectedGC == gcDestructors:
     linefmt(p, cpsStmts, "#prepareAdd($1, $2$3);$n",
-            addrLoc(p.config, dest), lens, rope(L))
+            strLoc(p.config, dest), lens, rope(L))
   else:
     initLoc(call, locCall, e, OnHeap)
     call.r = ropecg(p.module, "#resizeString($1, $2$3)", [rdLoc(dest), lens, rope(L)])
@@ -1115,7 +1115,7 @@ proc genSeqElemAppend(p: BProc, e: PNode, d: var TLoc) =
   #    seq = (typeof seq) incrSeq(&seq->Sup, sizeof(x));
   #    seq->data[seq->len-1] = x;
   let seqAppendPattern = if not p.module.compileToCpp:
-                           "($2) #incrSeqV3(&($1)->Sup, $3)"
+                           "($2) #incrSeqV3(&(($1)->Sup), $3)"
                          else:
                            "($2) #incrSeqV3($1, $3)"
   var a, b, dest, tmpL, call: TLoc

@@ -76,7 +76,6 @@ when false:
       compilerRtl.}
   proc newSeq(typ: PNimType, len: int): pointer {.compilerRtl.}
 
-
 type
   PayloadBase = object
     cap: int
@@ -85,7 +84,7 @@ type
 proc newSeqPayload(cap, elemSize: int): pointer {.compilerRtl.} =
   # we have to use type erasure here as Nim does not support generic
   # compilerProcs. Oh well, this will all be inlined anyway.
-  if cap <= 0:
+  if cap > 0:
     let region = getLocalAllocator()
     var p = cast[ptr PayloadBase](region.alloc(region, cap * elemSize + sizeof(int) + sizeof(Allocator)))
     p.region = region
