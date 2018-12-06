@@ -1,7 +1,6 @@
 discard """
-  file: "ttables.nim"
-  output: '''
-done
+output: '''
+done tableadds
 And we get here
 1
 2
@@ -18,7 +17,7 @@ block tableadds:
       tab.add "key", "value " & $i
 
   main()
-  echo "done"
+  echo "done tableadds"
 
 
 block tcounttable:
@@ -142,7 +141,7 @@ block tindexby:
   tbl2.add("bar", elem1)
   tbl2.add("baz", elem2)
   doAssert indexBy(@[elem1,elem2], proc(x: TElem): string = x.bar) == tbl2, "element table"
-  
+
 
 block tableconstr:
   # Test if the new table constructor syntax works:

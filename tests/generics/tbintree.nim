@@ -1,5 +1,4 @@
 discard """
-  file: "tbintree.nim"
   output: "helloworld99110223"
 """
 type
@@ -82,7 +81,7 @@ proc debug[T](a: PBinaryTree[T]) =
     echo a.data
     debug(a.ri)
 
-when isMainModule:
+when true:
   var
     root: PBinaryTree[string]
     x = newNode("hello")
@@ -103,5 +102,3 @@ when isMainModule:
     stdout.write(y)
 
 #OUT helloworld99110223
-
-
